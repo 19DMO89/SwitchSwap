@@ -23,6 +23,11 @@ SERVICE_LIST = "list_pending"
 
 ISSUE_NEW_DEVICE = "new_device"
 
+PANEL_URL_PATH = "switchswap"
+PANEL_WEBCOMPONENT = "switchswap-panel"
+PANEL_TITLE = "SwitchSwap"
+PANEL_ICON = "mdi:swap-horizontal-bold"
+
 # Wert im Zuordnungs-Dropdown für "diese Entität nicht übernehmen"
 NO_MATCH = "__none__"
 

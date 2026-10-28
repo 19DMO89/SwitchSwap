@@ -166,6 +166,88 @@ class SwapManager:
             er.async_get(self.hass), device_id, include_disabled_entities=True
         )
 
+    def pending_overview(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "old_device_id": swap_id,
+                "device": snap["label"],
+                "manufacturer": snap["manufacturer"],
+                "model": snap["model"],
+                "created": snap["created"],
+                "removed": snap["removed"],
+                "entities": [
+                    {
+                        "entity_id": entity["entity_id"],
+                        "name": entity["name"] or entity["original_name"],
+                    }
+                    for entity in snap["entities"]
+                ],
+            }
+            for swap_id, snap in self.pending.items()
+        ]
+
+    def devices_overview(self) -> list[dict[str, Any]]:
+        """Alle Geräte für die Auswahl im Panel."""
+        area_reg = ar.async_get(self.hass)
+        result = []
+        for device in dr.async_get(self.hass).devices.values():
+            if device.entry_type == dr.DeviceEntryType.SERVICE:
+                continue
+            area = area_reg.async_get_area(device.area_id) if device.area_id else None
+            created_at = getattr(device, "created_at", None)
+            result.append(
+                {
+                    "id": device.id,
+                    "label": device_label(device),
+                    "manufacturer": device.manufacturer,
+                    "model": device.model,
+                    "area": area.name if area else None,
+                    "integrations": sorted(
+                        {
+                            entry.domain
+                            for entry_id in device.config_entries
+                            if (entry := self.hass.config_entries.async_get_entry(entry_id))
+                        }
+                    ),
+                    "entities": len(self.device_entities(device.id)),
+                    "created_at": created_at.isoformat() if created_at else None,
+                    "pending": device.id in self.pending,
+                }
+            )
+        return result
+
+    def mapping_context(self, swap_id: str, new_device_id: str) -> dict[str, Any]:
+        """Alte Entitäten, neue Entitäten und Zuordnungsvorschlag für das Panel."""
+        if swap_id not in self.pending:
+            raise SwapError("no_pending", f"Kein vorgemerkter Tausch für {swap_id}")
+        if swap_id == new_device_id:
+            raise SwapError("same_device", "Altes und neues Gerät sind identisch")
+        new_device = dr.async_get(self.hass).async_get(new_device_id)
+        if new_device is None:
+            raise SwapError("device_not_found", f"Gerät {new_device_id} nicht gefunden")
+        snapshot = self.pending[swap_id]
+        return {
+            "old_device": snapshot["label"],
+            "new_device": device_label(new_device),
+            "old_entities": [
+                {
+                    "entity_id": entity["entity_id"],
+                    "domain": entity["domain"],
+                    "name": entity["name"] or entity["original_name"],
+                }
+                for entity in snapshot["entities"]
+            ],
+            "new_entities": [
+                {
+                    "entity_id": entry.entity_id,
+                    "domain": entry.domain,
+                    "name": entry.name or entry.original_name,
+                }
+                for entry in self.device_entities(new_device_id)
+            ],
+            "suggestion": self.suggest_mapping(swap_id, new_device_id),
+        }
+
     def pending_summary(self) -> str:
         if not self.pending:
             return "–"

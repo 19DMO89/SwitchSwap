@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import voluptuous as vol
 
 from homeassistant.core import (
@@ -78,19 +76,7 @@ def async_register_services(hass: HomeAssistant) -> None:
         await _manager(hass).async_cancel(call.data[CONF_OLD_DEVICE_ID])
 
     async def _list(call: ServiceCall) -> ServiceResponse:
-        pending: list[dict[str, Any]] = [
-            {
-                "old_device_id": swap_id,
-                "device": snap["label"],
-                "manufacturer": snap["manufacturer"],
-                "model": snap["model"],
-                "created": snap["created"],
-                "removed": snap["removed"],
-                "entities": [entity["entity_id"] for entity in snap["entities"]],
-            }
-            for swap_id, snap in _manager(hass).pending.items()
-        ]
-        return {"pending": pending}
+        return {"pending": _manager(hass).pending_overview()}
 
     hass.services.async_register(
         DOMAIN, SERVICE_PREPARE, _prepare, PREPARE_SCHEMA, SupportsResponse.OPTIONAL

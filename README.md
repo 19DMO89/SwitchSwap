@@ -37,6 +37,18 @@ Ordner `custom_components/switchswap` nach `<config>/custom_components/` kopiere
 
 ## Benutzung
 
+### Eigene Oberfläche in der Seitenleiste
+Nach der Einrichtung erscheint links in der Seitenleiste **SwitchSwap** (nur für Administratoren). Dort geht alles grafisch:
+
+- **Vorgemerkte Tausche** mit gesicherten Entitäten, „Neues Gerät zuweisen“ und „Verwerfen“
+- **Gerät tauschen**: Gerät suchen (Name, Hersteller, Modell, Bereich, Integration), auswählen, vormerken
+- **Ersatzgerät wählen**: neueste Geräte zuerst, nach dem Vormerken angelernte Geräte sind mit **neu** markiert
+- **Entitäten zuordnen**: Tabelle alt → neu mit automatischem Vorschlag, doppelte Zuordnungen werden markiert
+
+Die Geräteliste aktualisiert sich automatisch, sobald ein neues Gerät angelernt wird.
+
+Die gleichen Funktionen gibt es zusätzlich über *Geräte & Dienste → SwitchSwap → Konfigurieren* und über *Einstellungen → Reparaturen*.
+
 ### 1. Defektes Gerät vormerken
 *Einstellungen → Geräte & Dienste → SwitchSwap → **Konfigurieren** → Gerät zum Tausch vormerken*
 
@@ -93,6 +105,8 @@ data:
 ## English (short)
 
 SwitchSwap lets you replace a broken device while keeping entity IDs, names, areas, labels, aliases, entity options, history/statistics and device-based automations.
+
+A **SwitchSwap sidebar panel** provides a full GUI for all steps. Alternatively:
 
 1. *SwitchSwap → Configure → Mark a device for replacement* (optionally deletes it)
 2. Pair the new device
