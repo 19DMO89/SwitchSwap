@@ -1,0 +1,41 @@
+prepare_swap:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+    remove_device:
+      default: true
+      selector:
+        boolean:
+
+complete_swap:
+  fields:
+    old_device_id:
+      required: true
+      example: "3f1c0a9b2d4e4f6a8b0c1d2e3f405162"
+      selector:
+        text:
+    new_device_id:
+      required: true
+      selector:
+        device:
+    update_automations:
+      default: true
+      selector:
+        boolean:
+    mapping:
+      required: false
+      example: '{"sensor.wohnzimmer_temperatur": "sensor.0x00158d0001_temperature"}'
+      selector:
+        object:
+
+cancel_swap:
+  fields:
+    old_device_id:
+      required: true
+      example: "3f1c0a9b2d4e4f6a8b0c1d2e3f405162"
+      selector:
+        text:
+
+list_pending:

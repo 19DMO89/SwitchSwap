@@ -1,0 +1,159 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SwitchSwap einrichten",
+        "description": "SwitchSwap hilft beim Austausch defekter Geräte. Nach der Einrichtung findest du alle Funktionen unter **Konfigurieren**."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "SwitchSwap ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SwitchSwap",
+        "description": "Vorgemerkte Tausche:\n{pending}",
+        "menu_options": {
+          "prepare": "Gerät zum Tausch vormerken",
+          "complete": "Tausch abschließen (neues Gerät zuweisen)",
+          "cancel": "Vorgemerkten Tausch verwerfen"
+        }
+      },
+      "prepare": {
+        "title": "Gerät zum Tausch vormerken",
+        "description": "Entitäts-IDs, Namen, Symbole, Bereiche, Labels, Aliase und Einstellungen des Geräts werden gespeichert. Danach kann das Gerät entfernt und das Ersatzgerät angelernt werden.",
+        "data": {
+          "device_id": "Defektes Gerät",
+          "remove_device": "Gerät jetzt löschen"
+        },
+        "data_description": {
+          "remove_device": "Entfernt das Gerät aus der Integration (sofern unterstützt) und aus Home Assistant. Ohne Häkchen wird es erst beim Abschließen des Tauschs gelöscht."
+        }
+      },
+      "complete": {
+        "title": "Tausch abschließen",
+        "data": {
+          "swap_id": "Altes (vorgemerktes) Gerät",
+          "new_device_id": "Neues Gerät"
+        }
+      },
+      "mapping": {
+        "title": "Entitäten zuordnen",
+        "description": "**{old}** → **{new}**\n\nFür jede der {count} alten Entitäten (links) die passende Entität des neuen Geräts wählen. Die neue Entität erhält die alte Entitäts-ID, Namen und Einstellungen – Verlauf, Dashboards und Automationen laufen weiter.\n\n{error}",
+        "data": {
+          "update_automations": "Geräte-IDs in automations.yaml / scripts.yaml ersetzen"
+        }
+      },
+      "cancel": {
+        "title": "Tausch verwerfen",
+        "description": "Die gespeicherten Daten werden gelöscht. Ein bereits entferntes Gerät wird dadurch nicht wiederhergestellt.",
+        "data": {
+          "swap_id": "Vorgemerktes Gerät"
+        }
+      }
+    },
+    "error": {
+      "already_pending": "Für dieses Gerät ist bereits ein Tausch vorgemerkt.",
+      "device_not_found": "Gerät nicht gefunden.",
+      "same_device": "Altes und neues Gerät dürfen nicht identisch sein.",
+      "duplicate_target": "Eine neue Entität wurde mehreren alten Entitäten zugeordnet.",
+      "no_pending": "Kein vorgemerkter Tausch gefunden."
+    },
+    "abort": {
+      "not_loaded": "SwitchSwap ist nicht geladen.",
+      "no_pending": "Es ist kein Tausch vorgemerkt.",
+      "device_not_found": "Gerät nicht gefunden.",
+      "prepared": "{device} wurde mit {count} Entitäten gesichert. Lerne jetzt das Ersatzgerät an – SwitchSwap meldet es unter Einstellungen → Reparaturen.",
+      "completed": "Tausch abgeschlossen: {old} → {new}. {mapped} Entitäten übernommen, {skipped} nicht zugeordnet. Details stehen in den Benachrichtigungen.",
+      "cancelled": "Der Tausch für {device} wurde verworfen."
+    }
+  },
+  "issues": {
+    "new_device_detected": {
+      "title": "Neues Gerät erkannt: {device}",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Ist {device} ein Ersatzgerät?",
+            "description": "Es ist ein Gerätetausch vorgemerkt. Soll **{device}** ein vorgemerktes Gerät ersetzen?",
+            "data": {
+              "is_replacement": "Ja, das ist ein Ersatzgerät",
+              "swap_id": "Ersetzt das Gerät"
+            }
+          },
+          "mapping": {
+            "title": "Entitäten zuordnen",
+            "description": "**{old}** → **{new}**\n\nFür jede der {count} alten Entitäten (links) die passende Entität des neuen Geräts wählen. Die neue Entität erhält die alte Entitäts-ID, Namen und Einstellungen.\n\n{error}",
+            "data": {
+              "update_automations": "Geräte-IDs in automations.yaml / scripts.yaml ersetzen"
+            }
+          }
+        },
+        "error": {
+          "device_not_found": "Gerät nicht gefunden.",
+          "same_device": "Altes und neues Gerät dürfen nicht identisch sein.",
+          "duplicate_target": "Eine neue Entität wurde mehreren alten Entitäten zugeordnet.",
+          "no_pending": "Kein vorgemerkter Tausch gefunden."
+        },
+        "abort": {
+          "no_pending": "Es ist kein Tausch (mehr) vorgemerkt.",
+          "device_not_found": "Das neue Gerät existiert nicht mehr."
+        }
+      }
+    }
+  },
+  "services": {
+    "prepare_swap": {
+      "name": "Gerät zum Tausch vormerken",
+      "description": "Sichert alle Entitäten und Einstellungen eines Geräts und entfernt es optional.",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das defekte Gerät."
+        },
+        "remove_device": {
+          "name": "Gerät löschen",
+          "description": "Gerät direkt aus Integration und Home Assistant entfernen."
+        }
+      }
+    },
+    "complete_swap": {
+      "name": "Tausch abschließen",
+      "description": "Überträgt die gesicherten Entitäten und Einstellungen auf das neue Gerät.",
+      "fields": {
+        "old_device_id": {
+          "name": "Alte Geräte-ID",
+          "description": "ID des vorgemerkten Geräts (siehe Dienst list_pending)."
+        },
+        "new_device_id": {
+          "name": "Neues Gerät",
+          "description": "Das Ersatzgerät."
+        },
+        "update_automations": {
+          "name": "Automationen anpassen",
+          "description": "Geräte-IDs in automations.yaml und scripts.yaml ersetzen (Backup wird angelegt)."
+        },
+        "mapping": {
+          "name": "Zuordnung",
+          "description": "Optional: alte entity_id → neue entity_id. Ohne Angabe wird automatisch zugeordnet."
+        }
+      }
+    },
+    "cancel_swap": {
+      "name": "Tausch verwerfen",
+      "description": "Löscht einen vorgemerkten Tausch.",
+      "fields": {
+        "old_device_id": {
+          "name": "Alte Geräte-ID",
+          "description": "ID des vorgemerkten Geräts."
+        }
+      }
+    },
+    "list_pending": {
+      "name": "Vorgemerkte Tausche anzeigen",
+      "description": "Gibt alle vorgemerkten Tausche als Antwort zurück."
+    }
+  }
+}

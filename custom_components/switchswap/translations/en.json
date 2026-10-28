@@ -1,0 +1,159 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up SwitchSwap",
+        "description": "SwitchSwap helps you replace broken devices. After setup, all functions are available under **Configure**."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "SwitchSwap is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SwitchSwap",
+        "description": "Pending swaps:\n{pending}",
+        "menu_options": {
+          "prepare": "Mark a device for replacement",
+          "complete": "Complete a swap (assign new device)",
+          "cancel": "Discard a pending swap"
+        }
+      },
+      "prepare": {
+        "title": "Mark device for replacement",
+        "description": "Entity IDs, names, icons, areas, labels, aliases and settings of the device are saved. Afterwards the device can be removed and the replacement paired.",
+        "data": {
+          "device_id": "Broken device",
+          "remove_device": "Delete device now"
+        },
+        "data_description": {
+          "remove_device": "Removes the device from its integration (if supported) and from Home Assistant. If unchecked, it is deleted when the swap is completed."
+        }
+      },
+      "complete": {
+        "title": "Complete swap",
+        "data": {
+          "swap_id": "Old (pending) device",
+          "new_device_id": "New device"
+        }
+      },
+      "mapping": {
+        "title": "Map entities",
+        "description": "**{old}** → **{new}**\n\nFor each of the {count} old entities (left) choose the matching entity of the new device. The new entity receives the old entity ID, name and settings – history, dashboards and automations keep working.\n\n{error}",
+        "data": {
+          "update_automations": "Replace device IDs in automations.yaml / scripts.yaml"
+        }
+      },
+      "cancel": {
+        "title": "Discard swap",
+        "description": "The saved data will be deleted. A device that was already removed is not restored.",
+        "data": {
+          "swap_id": "Pending device"
+        }
+      }
+    },
+    "error": {
+      "already_pending": "A swap is already pending for this device.",
+      "device_not_found": "Device not found.",
+      "same_device": "Old and new device must not be the same.",
+      "duplicate_target": "A new entity was assigned to more than one old entity.",
+      "no_pending": "No pending swap found."
+    },
+    "abort": {
+      "not_loaded": "SwitchSwap is not loaded.",
+      "no_pending": "There is no pending swap.",
+      "device_not_found": "Device not found.",
+      "prepared": "{device} was saved with {count} entities. Now pair the replacement – SwitchSwap will report it under Settings → Repairs.",
+      "completed": "Swap completed: {old} → {new}. {mapped} entities transferred, {skipped} not mapped. See notifications for details.",
+      "cancelled": "The swap for {device} was discarded."
+    }
+  },
+  "issues": {
+    "new_device_detected": {
+      "title": "New device detected: {device}",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Is {device} a replacement?",
+            "description": "A device swap is pending. Should **{device}** replace a pending device?",
+            "data": {
+              "is_replacement": "Yes, this is a replacement",
+              "swap_id": "Replaces device"
+            }
+          },
+          "mapping": {
+            "title": "Map entities",
+            "description": "**{old}** → **{new}**\n\nFor each of the {count} old entities (left) choose the matching entity of the new device. The new entity receives the old entity ID, name and settings.\n\n{error}",
+            "data": {
+              "update_automations": "Replace device IDs in automations.yaml / scripts.yaml"
+            }
+          }
+        },
+        "error": {
+          "device_not_found": "Device not found.",
+          "same_device": "Old and new device must not be the same.",
+          "duplicate_target": "A new entity was assigned to more than one old entity.",
+          "no_pending": "No pending swap found."
+        },
+        "abort": {
+          "no_pending": "There is no pending swap (anymore).",
+          "device_not_found": "The new device no longer exists."
+        }
+      }
+    }
+  },
+  "services": {
+    "prepare_swap": {
+      "name": "Mark device for replacement",
+      "description": "Saves all entities and settings of a device and optionally removes it.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The broken device."
+        },
+        "remove_device": {
+          "name": "Delete device",
+          "description": "Remove the device from its integration and Home Assistant right away."
+        }
+      }
+    },
+    "complete_swap": {
+      "name": "Complete swap",
+      "description": "Transfers the saved entities and settings to the new device.",
+      "fields": {
+        "old_device_id": {
+          "name": "Old device ID",
+          "description": "ID of the pending device (see the list_pending action)."
+        },
+        "new_device_id": {
+          "name": "New device",
+          "description": "The replacement device."
+        },
+        "update_automations": {
+          "name": "Update automations",
+          "description": "Replace device IDs in automations.yaml and scripts.yaml (a backup is created)."
+        },
+        "mapping": {
+          "name": "Mapping",
+          "description": "Optional: old entity_id → new entity_id. Mapped automatically if omitted."
+        }
+      }
+    },
+    "cancel_swap": {
+      "name": "Discard swap",
+      "description": "Deletes a pending swap.",
+      "fields": {
+        "old_device_id": {
+          "name": "Old device ID",
+          "description": "ID of the pending device."
+        }
+      }
+    },
+    "list_pending": {
+      "name": "List pending swaps",
+      "description": "Returns all pending swaps as a response."
+    }
+  }
+}
