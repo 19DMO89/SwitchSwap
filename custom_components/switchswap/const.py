@@ -15,11 +15,14 @@ CONF_OLD_DEVICE_ID = "old_device_id"
 CONF_UPDATE_AUTOMATIONS = "update_automations"
 CONF_MAPPING = "mapping"
 CONF_IS_REPLACEMENT = "is_replacement"
+CONF_DEVICE_A = "device_a"
+CONF_DEVICE_B = "device_b"
 
 SERVICE_PREPARE = "prepare_swap"
 SERVICE_COMPLETE = "complete_swap"
 SERVICE_CANCEL = "cancel_swap"
 SERVICE_LIST = "list_pending"
+SERVICE_EXCHANGE = "exchange_devices"
 
 ISSUE_NEW_DEVICE = "new_device"
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import asyncio
+from collections.abc import Iterable, Mapping
 from enum import Enum
 import logging
 import os
@@ -256,6 +257,42 @@ class SwapManager:
             for snap in self.pending.values()
         )
 
+    def _snapshot_device(self, device: dr.DeviceEntry) -> dict[str, Any]:
+        return {
+            "device_id": device.id,
+            "label": device_label(device),
+            "name": device.name,
+            "name_by_user": device.name_by_user,
+            "area_id": device.area_id,
+            "labels": list(device.labels),
+            "manufacturer": device.manufacturer,
+            "model": device.model,
+            "identifiers": [list(item) for item in device.identifiers],
+            "connections": [list(item) for item in device.connections],
+            "config_entries": list(device.config_entries),
+            "created": dt_util.utcnow().isoformat(),
+            "removed": False,
+            "entities": [
+                _snapshot_entity(entry) for entry in self.device_entities(device.id)
+            ],
+        }
+
+    async def _async_wait_released(self, entity_ids: Iterable[str]) -> None:
+        """Warten, bis umbenannte/entfernte Entitäten ihren alten Zustand freigeben.
+
+        Home Assistant verarbeitet Registry-Änderungen an laufenden Entitäten
+        asynchron; solange der alte Zustand existiert, ist die entity_id belegt.
+        """
+        entity_ids = list(entity_ids)
+        for _ in range(50):
+            if all(
+                (state := self.hass.states.get(entity_id)) is None
+                or state.attributes.get("restored")
+                for entity_id in entity_ids
+            ):
+                return
+            await asyncio.sleep(0.1)
+
     # ------------------------------------------------------------------ prepare
 
     async def async_prepare(
@@ -271,23 +308,8 @@ class SwapManager:
                 "already_pending", f"Für {device_label(device)} ist bereits ein Tausch vorgemerkt"
             )
 
-        entries = self.device_entities(device_id)
-        snapshot: dict[str, Any] = {
-            "device_id": device.id,
-            "label": device_label(device),
-            "name": device.name,
-            "name_by_user": device.name_by_user,
-            "area_id": device.area_id,
-            "labels": list(device.labels),
-            "manufacturer": device.manufacturer,
-            "model": device.model,
-            "identifiers": [list(item) for item in device.identifiers],
-            "connections": [list(item) for item in device.connections],
-            "config_entries": list(device.config_entries),
-            "created": dt_util.utcnow().isoformat(),
-            "removed": False,
-            "entities": [_snapshot_entity(entry) for entry in entries],
-        }
+        snapshot = self._snapshot_device(device)
+        entries = snapshot["entities"]
         self.pending[device_id] = snapshot
         await self._async_save()
 
@@ -345,7 +367,11 @@ class SwapManager:
 
     def suggest_mapping(self, swap_id: str, new_device_id: str) -> dict[str, str | None]:
         """Automatische Zuordnung alte Entität -> neue Entität."""
-        snapshot = self.pending[swap_id]
+        return self._match(self.pending[swap_id], new_device_id)
+
+    def _match(
+        self, snapshot: dict[str, Any], new_device_id: str
+    ) -> dict[str, str | None]:
         new_device = dr.async_get(self.hass).async_get(new_device_id)
         new_entries = self.device_entities(new_device_id)
         old_tokens = _device_tokens(snapshot["identifiers"], snapshot["connections"])
@@ -420,6 +446,7 @@ class SwapManager:
         old_device = dev_reg.async_get(swap_id)
         if old_device is not None:
             await self._async_remove_device(old_device)
+            await self._async_wait_released(old["entity_id"] for old, _ in resolved)
 
         mapped: list[dict[str, str]] = []
         moved: list[str] = []
@@ -467,8 +494,14 @@ class SwapManager:
         self._notify_result(result)
         return result
 
-    def _async_apply_entity(self, old: dict[str, Any], registry_id: str) -> str | None:
-        """Eine Entität übernehmen. Gibt ggf. die entity_id eines verdrängten Eintrags zurück."""
+    def _async_apply_entity(
+        self, old: dict[str, Any], registry_id: str, exact: bool = False
+    ) -> str | None:
+        """Eine Entität übernehmen. Gibt ggf. die entity_id eines verdrängten Eintrags zurück.
+
+        exact=True (zwei aktive Geräte tauschen): Einstellungen exakt übernehmen,
+        also auch vorhandene Werte des Ziels zurücksetzen.
+        """
         ent_reg = er.async_get(self.hass)
         target = old["entity_id"]
         current = er.async_resolve_entity_id(ent_reg, registry_id)
@@ -498,16 +531,22 @@ class SwapManager:
             updates["name"] = old["name"]
         elif old["original_name"] and old["original_name"] != new_entry.original_name:
             updates["name"] = old["original_name"]
+        elif exact:
+            updates["name"] = None
 
         if old["area_id"] and ar.async_get(self.hass).async_get_area(old["area_id"]):
             updates["area_id"] = old["area_id"]
+        elif exact:
+            updates["area_id"] = None
         label_reg = lr.async_get(self.hass)
         labels = {label for label in old["labels"] if label_reg.async_get_label(label)}
-        if labels:
+        if exact:
+            updates["labels"] = labels
+        elif labels:
             updates["labels"] = set(new_entry.labels) | labels
-        if old["aliases"]:
+        if old["aliases"] or exact:
             updates["aliases"] = type(new_entry.aliases)(old["aliases"])
-        if old["device_class"] is not None:
+        if old["device_class"] is not None or exact:
             updates["device_class"] = old["device_class"]
 
         if old["hidden_by"] == er.RegistryEntryHider.USER.value:
@@ -530,20 +569,28 @@ class SwapManager:
                 _LOGGER.warning("Optionen %s für %s nicht übernommen", domain, target)
         return moved_to
 
-    def _apply_device(self, snapshot: dict[str, Any], new_device: dr.DeviceEntry) -> None:
+    def _apply_device(
+        self, snapshot: dict[str, Any], new_device: dr.DeviceEntry, exact: bool = False
+    ) -> None:
         updates: dict[str, Any] = {}
         name = snapshot["name_by_user"] or (
             snapshot["name"] if snapshot["name"] != new_device.name else None
         )
         if name:
             updates["name_by_user"] = name
+        elif exact and new_device.name_by_user:
+            updates["name_by_user"] = None
         if snapshot["area_id"] and ar.async_get(self.hass).async_get_area(
             snapshot["area_id"]
         ):
             updates["area_id"] = snapshot["area_id"]
+        elif exact:
+            updates["area_id"] = None
         label_reg = lr.async_get(self.hass)
         labels = {label for label in snapshot["labels"] if label_reg.async_get_label(label)}
-        if labels:
+        if exact:
+            updates["labels"] = labels
+        elif labels:
             updates["labels"] = set(new_device.labels) | labels
         if updates:
             dr.async_get(self.hass).async_update_device(new_device.id, **updates)
@@ -551,6 +598,10 @@ class SwapManager:
     async def _async_update_yaml_references(self, id_map: dict[str, str]) -> list[str]:
         """Geräte- und Entitäts-Registry-IDs in automations.yaml / scripts.yaml ersetzen."""
         stamp = dt_util.now().strftime("%Y%m%d-%H%M%S")
+        # Ein Durchlauf, damit sich bei A <-> B die Ersetzungen nicht aufheben
+        pattern = re.compile(
+            r"\b(" + "|".join(re.escape(old_id) for old_id in id_map) + r")\b"
+        )
 
         def _update() -> list[str]:
             changed = []
@@ -560,9 +611,7 @@ class SwapManager:
                     continue
                 with open(path, encoding="utf-8") as file:
                     text = file.read()
-                new_text = text
-                for old_id, new_id in id_map.items():
-                    new_text = re.sub(rf"\b{re.escape(old_id)}\b", new_id, new_text)
+                new_text = pattern.sub(lambda match: id_map[match.group(1)], text)
                 if new_text != text:
                     shutil.copy2(path, f"{path}.switchswap-{stamp}.bak")
                     with open(path, "w", encoding="utf-8") as file:
@@ -602,6 +651,165 @@ class SwapManager:
             self.hass,
             "\n".join(lines),
             title="SwitchSwap: Tausch abgeschlossen",
+        )
+
+    # ------------------------------------------------------------------ exchange
+
+    def _exchange_devices(
+        self, device_a_id: str, device_b_id: str
+    ) -> tuple[dr.DeviceEntry, dr.DeviceEntry]:
+        if device_a_id == device_b_id:
+            raise SwapError("same_device", "Die beiden Geräte sind identisch")
+        dev_reg = dr.async_get(self.hass)
+        devices = []
+        for device_id in (device_a_id, device_b_id):
+            if (device := dev_reg.async_get(device_id)) is None:
+                raise SwapError("device_not_found", f"Gerät {device_id} nicht gefunden")
+            if device_id in self.pending:
+                raise SwapError(
+                    "already_pending",
+                    f"Für {device_label(device)} ist bereits ein Tausch vorgemerkt",
+                )
+            devices.append(device)
+        return devices[0], devices[1]
+
+    def exchange_context(self, device_a_id: str, device_b_id: str) -> dict[str, Any]:
+        """Entitäten beider Geräte und Zuordnungsvorschlag für das Panel."""
+        device_a, device_b = self._exchange_devices(device_a_id, device_b_id)
+        snapshot = self._snapshot_device(device_a)
+
+        def _entities(device_id: str) -> list[dict[str, Any]]:
+            return [
+                {
+                    "entity_id": entry.entity_id,
+                    "domain": entry.domain,
+                    "name": entry.name or entry.original_name,
+                }
+                for entry in self.device_entities(device_id)
+            ]
+
+        return {
+            "device_a": device_label(device_a),
+            "device_b": device_label(device_b),
+            "entities_a": _entities(device_a_id),
+            "entities_b": _entities(device_b_id),
+            "suggestion": self._match(snapshot, device_b_id),
+        }
+
+    async def async_exchange(
+        self,
+        device_a_id: str,
+        device_b_id: str,
+        mapping: dict[str, str | None] | None = None,
+        update_automations: bool = True,
+    ) -> dict[str, Any]:
+        """Zwei aktive Geräte tauschen: Entitäts-IDs, Namen und Einstellungen über Kreuz."""
+        device_a, device_b = self._exchange_devices(device_a_id, device_b_id)
+        snap_a = self._snapshot_device(device_a)
+        snap_b = self._snapshot_device(device_b)
+        if mapping is None:
+            mapping = self._match(snap_a, device_b_id)
+
+        by_id_a = {entity["entity_id"]: entity for entity in snap_a["entities"]}
+        by_id_b = {entity["entity_id"]: entity for entity in snap_b["entities"]}
+        pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        used: set[str] = set()
+        for entity_a, entity_b in mapping.items():
+            if not entity_b:
+                continue
+            if entity_a not in by_id_a or entity_b not in by_id_b:
+                raise SwapError(
+                    "invalid_mapping",
+                    f"{entity_a} → {entity_b} gehört nicht zu den gewählten Geräten",
+                )
+            if entity_b in used:
+                raise SwapError(
+                    "duplicate_target", f"{entity_b} ist mehrfach zugeordnet"
+                )
+            if by_id_a[entity_a]["domain"] != by_id_b[entity_b]["domain"]:
+                raise SwapError(
+                    "invalid_mapping", f"{entity_a} und {entity_b} haben verschiedene Typen"
+                )
+            used.add(entity_b)
+            pairs.append((by_id_a[entity_a], by_id_b[entity_b]))
+
+        ent_reg = er.async_get(self.hass)
+        errors: list[str] = []
+
+        # 1. Alle beteiligten Entitäten auf temporäre IDs schieben, damit die
+        #    Original-IDs frei werden und über Kreuz vergeben werden können.
+        for entity in [entity for pair in pairs for entity in pair]:
+            object_id = entity["entity_id"].split(".", 1)[1]
+            temp_id = ent_reg.async_generate_entity_id(
+                entity["domain"], f"{object_id}_switchswap"
+            )
+            ent_reg.async_update_entity(entity["entity_id"], new_entity_id=temp_id)
+        await self._async_wait_released(
+            entity["entity_id"] for pair in pairs for entity in pair
+        )
+
+        # 2. Einstellungen von A auf B übertragen und umgekehrt
+        swapped: list[dict[str, str]] = []
+        id_map: dict[str, str] = {device_a_id: device_b_id, device_b_id: device_a_id}
+        for entity_a, entity_b in pairs:
+            for source, target in ((entity_a, entity_b), (entity_b, entity_a)):
+                try:
+                    self._async_apply_entity(source, target["registry_id"], exact=True)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.exception("Tausch von %s fehlgeschlagen", source["entity_id"])
+                    errors.append(f"{source['entity_id']}: {err}")
+                    continue
+                id_map[source["registry_id"]] = target["registry_id"]
+            swapped.append({"a": entity_a["entity_id"], "b": entity_b["entity_id"]})
+
+        self._apply_device(snap_a, device_b, exact=True)
+        self._apply_device(snap_b, device_a, exact=True)
+
+        yaml_updated: list[str] = []
+        if update_automations:
+            try:
+                yaml_updated = await self._async_update_yaml_references(id_map)
+            except OSError as err:
+                errors.append(f"Automationen/Skripte: {err}")
+
+        paired_a = {entity_a["entity_id"] for entity_a, _ in pairs}
+        paired_b = {entity_b["entity_id"] for _, entity_b in pairs}
+        result = {
+            "device_a": snap_a["label"],
+            "device_b": snap_b["label"],
+            "swapped": swapped,
+            "unpaired": [
+                *(entity_id for entity_id in by_id_a if entity_id not in paired_a),
+                *(entity_id for entity_id in by_id_b if entity_id not in paired_b),
+            ],
+            "yaml_updated": yaml_updated,
+            "errors": errors,
+        }
+        self._notify_exchange(result)
+        return result
+
+    def _notify_exchange(self, result: dict[str, Any]) -> None:
+        lines = [
+            f"**{result['device_a']}** ⇄ **{result['device_b']}**",
+            "",
+            f"Getauscht: {len(result['swapped'])} Entitäten-Paare",
+        ]
+        lines += [f"- {item['a']} ⇄ {item['b']}" for item in result["swapped"]]
+        if result["unpaired"]:
+            lines += ["", "Ohne Partner (unverändert):"]
+            lines += [f"- {entity_id}" for entity_id in result["unpaired"]]
+        if result["yaml_updated"]:
+            lines += [
+                "",
+                "Geräte-IDs getauscht in: " + ", ".join(result["yaml_updated"])
+                + " (Backup *.switchswap-*.bak angelegt)",
+            ]
+        if result["errors"]:
+            lines += ["", "Fehler:"] + [f"- {error}" for error in result["errors"]]
+        persistent_notification.async_create(
+            self.hass,
+            "\n".join(lines),
+            title="SwitchSwap: Geräte getauscht",
         )
 
     # ------------------------------------------------------------------ cancel

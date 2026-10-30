@@ -38,4 +38,24 @@ cancel_swap:
       selector:
         text:
 
+exchange_devices:
+  fields:
+    device_a:
+      required: true
+      selector:
+        device:
+    device_b:
+      required: true
+      selector:
+        device:
+    update_automations:
+      default: true
+      selector:
+        boolean:
+    mapping:
+      required: false
+      example: '{"switch.kueche_steckdose": "switch.wohnzimmer_steckdose"}'
+      selector:
+        object:
+
 list_pending:

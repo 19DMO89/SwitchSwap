@@ -15,6 +15,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_DEVICE_A,
+    CONF_DEVICE_B,
     CONF_DEVICE_ID,
     CONF_MAPPING,
     CONF_NEW_DEVICE_ID,
@@ -24,6 +26,7 @@ from .const import (
     DOMAIN,
     SERVICE_CANCEL,
     SERVICE_COMPLETE,
+    SERVICE_EXCHANGE,
     SERVICE_LIST,
     SERVICE_PREPARE,
 )
@@ -44,6 +47,14 @@ COMPLETE_SCHEMA = vol.Schema(
     }
 )
 CANCEL_SCHEMA = vol.Schema({vol.Required(CONF_OLD_DEVICE_ID): cv.string})
+EXCHANGE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_DEVICE_A): cv.string,
+        vol.Required(CONF_DEVICE_B): cv.string,
+        vol.Optional(CONF_UPDATE_AUTOMATIONS, default=True): cv.boolean,
+        vol.Optional(CONF_MAPPING): {cv.entity_id: vol.Any(None, cv.entity_id)},
+    }
+)
 
 
 def _manager(hass: HomeAssistant) -> SwapManager:
@@ -75,6 +86,14 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def _cancel(call: ServiceCall) -> None:
         await _manager(hass).async_cancel(call.data[CONF_OLD_DEVICE_ID])
 
+    async def _exchange(call: ServiceCall) -> ServiceResponse:
+        return await _manager(hass).async_exchange(
+            call.data[CONF_DEVICE_A],
+            call.data[CONF_DEVICE_B],
+            call.data.get(CONF_MAPPING),
+            call.data[CONF_UPDATE_AUTOMATIONS],
+        )
+
     async def _list(call: ServiceCall) -> ServiceResponse:
         return {"pending": _manager(hass).pending_overview()}
 
@@ -86,11 +105,20 @@ def async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(DOMAIN, SERVICE_CANCEL, _cancel, CANCEL_SCHEMA)
     hass.services.async_register(
+        DOMAIN, SERVICE_EXCHANGE, _exchange, EXCHANGE_SCHEMA, SupportsResponse.OPTIONAL
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_LIST, _list, supports_response=SupportsResponse.ONLY
     )
 
 
 @callback
 def async_unregister_services(hass: HomeAssistant) -> None:
-    for service in (SERVICE_PREPARE, SERVICE_COMPLETE, SERVICE_CANCEL, SERVICE_LIST):
+    for service in (
+        SERVICE_PREPARE,
+        SERVICE_COMPLETE,
+        SERVICE_CANCEL,
+        SERVICE_LIST,
+        SERVICE_EXCHANGE,
+    ):
         hass.services.async_remove(DOMAIN, service)

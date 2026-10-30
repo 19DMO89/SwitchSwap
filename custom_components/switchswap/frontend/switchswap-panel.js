@@ -44,6 +44,22 @@ const STRINGS = {
     how2: "Ersatzgerät ganz normal anlernen bzw. integrieren.",
     how3: "Hier „Neues Gerät zuweisen“ wählen (oder die Meldung unter Einstellungen → Reparaturen nutzen).",
     how4: "Entitäten prüfen und Tausch abschließen – Dashboards, Verlauf und Automationen laufen weiter.",
+    exTitle: "Zwei Geräte tauschen",
+    exIntro: "Für zwei aktive Geräte, die die Plätze tauschen (z. B. zwei umgesteckte Steckdosen): Entitäts-IDs, Namen, Bereiche, Labels und Einstellungen werden über Kreuz getauscht. Es wird nichts gelöscht.",
+    exStart: "Geräte auswählen",
+    exPickA: "Erstes Gerät (A) wählen",
+    exPickB: "Zweites Gerät (B) wählen – tauscht mit {device}",
+    exMapTitle: "Entitäten-Paare",
+    exMapHint: "Jedes Paar tauscht Entitäts-ID, Namen und Einstellungen. Entitäten ohne Partner bleiben unverändert.",
+    exA: "Gerät A",
+    exB: "Gerät B",
+    exNone: "— nicht tauschen —",
+    exDo: "Geräte tauschen",
+    exConfirm: "{a} und {b} jetzt tauschen?",
+    exDone: "Getauscht: {a} ⇄ {b}. {pairs} Entitäten-Paare, {unpaired} ohne Partner.",
+    exUpdateAutomations: "Geräte-IDs in automations.yaml / scripts.yaml tauschen (mit Backup)",
+    exNoPairs: "Keine passenden Entitäten-Paare – nur Gerätename, Bereich und Labels werden getauscht.",
+    duplicateB: "Eine Entität von Gerät B ist mehrfach zugeordnet.",
     error: "Fehler",
   },
   en: {
@@ -89,6 +105,22 @@ const STRINGS = {
     how2: "Pair or integrate the replacement as usual.",
     how3: "Choose “Assign new device” here (or use the notice under Settings → Repairs).",
     how4: "Review the entities and complete the swap – dashboards, history and automations keep working.",
+    exTitle: "Exchange two devices",
+    exIntro: "For two active devices that trade places (e.g. two re-plugged smart plugs): entity IDs, names, areas, labels and settings are swapped crosswise. Nothing is deleted.",
+    exStart: "Choose devices",
+    exPickA: "Choose the first device (A)",
+    exPickB: "Choose the second device (B) – exchanges with {device}",
+    exMapTitle: "Entity pairs",
+    exMapHint: "Each pair swaps entity ID, name and settings. Entities without a partner stay unchanged.",
+    exA: "Device A",
+    exB: "Device B",
+    exNone: "— don't swap —",
+    exDo: "Exchange devices",
+    exConfirm: "Exchange {a} and {b} now?",
+    exDone: "Exchanged: {a} ⇄ {b}. {pairs} entity pairs, {unpaired} without partner.",
+    exUpdateAutomations: "Swap device IDs in automations.yaml / scripts.yaml (with backup)",
+    exNoPairs: "No matching entity pairs – only device name, area and labels are swapped.",
+    duplicateB: "An entity of device B is assigned more than once.",
     error: "Error",
   },
 };
@@ -114,6 +146,7 @@ class SwitchSwapPanel extends HTMLElement {
       confirmPrepare: false,
       confirmCancel: null,
       assign: null,
+      ex: null,
       busy: false,
       msg: null,
     };
@@ -192,7 +225,7 @@ class SwitchSwapPanel extends HTMLElement {
       this._s.msg = { type: "error", text: err.message || String(err) };
     }
     if (this._s.view === "home") this._render();
-    else this._renderList("newlist");
+    else this._renderList(this._s.view === "exchange" ? "exlist" : "newlist");
   }
 
   _set(patch) {
@@ -271,7 +304,7 @@ class SwitchSwapPanel extends HTMLElement {
         });
         break;
       case "back":
-        this._set({ view: "home", assign: null, msg: null });
+        this._set({ view: "home", assign: null, ex: null, msg: null });
         this._load();
         break;
       case "pick-new":
@@ -319,6 +352,72 @@ class SwitchSwapPanel extends HTMLElement {
         }
         break;
       }
+      case "ex-start":
+        this._set({
+          view: "exchange",
+          ex: { a: null, b: null, ctx: null, mapping: {}, updateAutomations: true, confirm: false },
+          newSearch: "",
+          msg: null,
+        });
+        break;
+      case "ex-pick":
+        if (!s.ex.a) {
+          this._set({ ex: { ...s.ex, a: id }, newSearch: "" });
+          break;
+        }
+        this._set({ busy: true, msg: null });
+        try {
+          const ctx = await this._ws("exchange_suggest", { device_a: s.ex.a, device_b: id });
+          const mapping = {};
+          for (const ent of ctx.entities_a) mapping[ent.entity_id] = ctx.suggestion[ent.entity_id] || "";
+          this._set({ busy: false, ex: { ...s.ex, b: id, ctx, mapping } });
+        } catch (err) {
+          this._error(err);
+        }
+        break;
+      case "ex-reset":
+        this._set({
+          ex: { a: null, b: null, ctx: null, mapping: {}, updateAutomations: s.ex.updateAutomations, confirm: false },
+          newSearch: "",
+        });
+        break;
+      case "ex-do":
+        if (this._hasDuplicates(s.ex.mapping)) return;
+        this._set({ ex: { ...s.ex, confirm: true } });
+        break;
+      case "ex-no":
+        this._set({ ex: { ...s.ex, confirm: false } });
+        break;
+      case "ex-yes": {
+        this._set({ busy: true });
+        const mapping = {};
+        for (const [a, value] of Object.entries(s.ex.mapping)) mapping[a] = value || null;
+        try {
+          const res = await this._ws("exchange", {
+            device_a: s.ex.a,
+            device_b: s.ex.b,
+            mapping,
+            update_automations: s.ex.updateAutomations,
+          });
+          this._s.view = "home";
+          this._s.ex = null;
+          this._s.busy = false;
+          this._s.msg = {
+            type: res.errors.length ? "warning" : "success",
+            text:
+              this._t("exDone", {
+                a: res.device_a,
+                b: res.device_b,
+                pairs: res.swapped.length,
+                unpaired: res.unpaired.length,
+              }) + (res.errors.length ? ` ${res.errors.join(" · ")}` : ""),
+          };
+          await this._load();
+        } catch (err) {
+          this._error(err);
+        }
+        break;
+      }
       case "dismiss":
         this._set({ msg: null });
         break;
@@ -333,6 +432,9 @@ class SwitchSwapPanel extends HTMLElement {
     } else if (el.id === "newsearch") {
       this._s.newSearch = el.value;
       this._renderList("newlist");
+    } else if (el.id === "exsearch") {
+      this._s.newSearch = el.value;
+      this._renderList("exlist");
     }
   }
 
@@ -344,14 +446,20 @@ class SwitchSwapPanel extends HTMLElement {
       this._render();
     } else if (el.id === "automations") {
       this._s.assign.updateAutomations = el.checked;
+    } else if (el.id === "exautomations") {
+      this._s.ex.updateAutomations = el.checked;
+    } else if (el.dataset.exa) {
+      this._s.ex.mapping[el.dataset.exa] = el.value;
+      this._s.ex.confirm = false;
+      this._render();
     } else if (el.dataset.old) {
       this._s.assign.mapping[el.dataset.old] = el.value;
       this._render();
     }
   }
 
-  _hasDuplicates() {
-    const values = Object.values(this._s.assign?.mapping || {}).filter(Boolean);
+  _hasDuplicates(mapping = this._s.assign?.mapping) {
+    const values = Object.values(mapping || {}).filter(Boolean);
     return new Set(values).size !== values.length;
   }
 
@@ -372,6 +480,9 @@ class SwitchSwapPanel extends HTMLElement {
     if (listId === "newlist") {
       devices = devices.filter((d) => d.id !== s.assign?.swapId);
       devices.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    } else if (listId === "exlist") {
+      devices = devices.filter((d) => d.id !== s.ex?.a);
+      devices.sort((a, b) => a.label.localeCompare(b.label));
     } else {
       devices.sort((a, b) => a.label.localeCompare(b.label));
     }
@@ -410,6 +521,8 @@ class SwitchSwapPanel extends HTMLElement {
       .map((d) =>
         listId === "devlist"
           ? this._deviceItem(d, "select", d.id === s.selected, false)
+          : listId === "exlist"
+          ? this._deviceItem(d, "ex-pick", false, false)
           : this._deviceItem(d, "pick-new", false, d.created_at && swapCreated && d.created_at > swapCreated)
       )
       .join("");
@@ -487,6 +600,11 @@ class SwitchSwapPanel extends HTMLElement {
         ${this._renderPrepareBar()}
       </section>
       <section class="card">
+        <h2>${this._t("exTitle")}</h2>
+        <p class="muted">${this._t("exIntro")}</p>
+        <div class="actions"><button class="flat" data-action="ex-start">${this._t("exStart")}</button></div>
+      </section>
+      <section class="card">
         <h2>${this._t("howTitle")}</h2>
         <ol class="how">
           <li>${this._t("how1")}</li><li>${this._t("how2")}</li><li>${this._t("how3")}</li><li>${this._t("how4")}</li>
@@ -557,14 +675,81 @@ class SwitchSwapPanel extends HTMLElement {
       </section>`;
   }
 
+  _renderExchange() {
+    const ex = this._s.ex;
+    if (!ex.ctx) {
+      const deviceA = this._s.devices.find((d) => d.id === ex.a);
+      return `
+        ${this._renderMsg()}
+        <section class="card">
+          <h2>${ex.a ? this._t("exPickB", { device: esc(deviceA?.label || "") }) : this._t("exPickA")}</h2>
+          <input class="search" id="exsearch" type="search" placeholder="${this._t("search")}" value="${esc(this._s.newSearch)}">
+          <div class="list" id="exlist"></div>
+          ${ex.a ? `<div class="actions end"><button class="flat" data-action="ex-reset">${this._t("otherDevice")}</button></div>` : ""}
+        </section>`;
+    }
+    const ctx = ex.ctx;
+    const counts = {};
+    for (const value of Object.values(ex.mapping)) if (value) counts[value] = (counts[value] || 0) + 1;
+    const rows = ctx.entities_a
+      .map((ent) => {
+        const value = ex.mapping[ent.entity_id] || "";
+        const options = ctx.entities_b
+          .filter((n) => n.domain === ent.domain)
+          .map(
+            (n) =>
+              `<option value="${esc(n.entity_id)}" ${n.entity_id === value ? "selected" : ""}>${esc(n.entity_id)}${
+                n.name ? ` (${esc(n.name)})` : ""
+              }</option>`
+          )
+          .join("");
+        return `
+          <tr class="${value && counts[value] > 1 ? "dup" : ""}">
+            <td><code>${esc(ent.entity_id)}</code>${ent.name ? `<div class="muted small">${esc(ent.name)}</div>` : ""}</td>
+            <td class="arrow">⇄</td>
+            <td><select data-exa="${esc(ent.entity_id)}">
+              <option value="" ${value ? "" : "selected"}>${this._t("exNone")}</option>${options}
+            </select></td>
+          </tr>`;
+      })
+      .join("");
+    const dup = this._hasDuplicates(ex.mapping);
+    const hasPairs = Object.values(ex.mapping).some(Boolean);
+    const buttons = ex.confirm
+      ? `<span>${this._t("exConfirm", { a: esc(ctx.device_a), b: esc(ctx.device_b) })}</span>
+         <button class="primary" data-action="ex-yes">${this._t("yes")}</button>
+         <button class="flat" data-action="ex-no">${this._t("no")}</button>`
+      : `<button class="flat" data-action="ex-reset">${this._t("otherDevice")}</button>
+         <button class="primary" data-action="ex-do" ${dup ? "disabled" : ""}>${this._t("exDo")}</button>`;
+    return `
+      ${this._renderMsg()}
+      <section class="card">
+        <h2>${this._t("exMapTitle")}</h2>
+        <p><b>${esc(ctx.device_a)}</b> ⇄ <b>${esc(ctx.device_b)}</b></p>
+        <p class="muted">${this._t("exMapHint")}</p>
+        ${
+          ctx.entities_a.length
+            ? `<div class="table-wrap"><table>
+                <thead><tr><th>${this._t("exA")}</th><th></th><th>${this._t("exB")}</th></tr></thead>
+                <tbody>${rows}</tbody></table></div>`
+            : ""
+        }
+        ${hasPairs ? "" : `<p class="muted">${this._t("exNoPairs")}</p>`}
+        ${dup ? `<div class="msg error"><span>${this._t("duplicateB")}</span></div>` : ""}
+        <label class="check"><input type="checkbox" id="exautomations" ${ex.updateAutomations ? "checked" : ""}> ${this._t("exUpdateAutomations")}</label>
+        <div class="actions end">${buttons}</div>
+      </section>`;
+  }
+
   _render() {
     const s = this._s;
     const assign = s.view === "assign" && s.assign;
+    const exchange = s.view === "exchange" && s.ex;
     this.shadowRoot.innerHTML = `
       <style>${STYLE}</style>
       <div class="toolbar">
         ${
-          assign
+          assign || exchange
             ? `<button class="icon back" data-action="back" title="${this._t("back")}">←</button>`
             : `<ha-menu-button></ha-menu-button>`
         }
@@ -572,14 +757,14 @@ class SwitchSwapPanel extends HTMLElement {
         ${s.busy ? `<div class="spinner"></div>` : ""}
       </div>
       <div class="content ${s.busy ? "busy" : ""}">
-        ${assign ? this._renderAssign() : this._renderHome()}
+        ${assign ? this._renderAssign() : exchange ? this._renderExchange() : this._renderHome()}
       </div>`;
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) {
       menu.hass = this._hass;
       menu.narrow = this._narrow;
     }
-    this._renderList(assign ? "newlist" : "devlist");
+    this._renderList(assign ? "newlist" : exchange ? "exlist" : "devlist");
   }
 }
 

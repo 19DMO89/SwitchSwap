@@ -154,6 +154,28 @@
     "list_pending": {
       "name": "List pending swaps",
       "description": "Returns all pending swaps as a response."
+    },
+    "exchange_devices": {
+      "name": "Exchange two devices",
+      "description": "Swaps entity IDs, names, areas and settings between two active devices (e.g. after swapping two plugs).",
+      "fields": {
+        "device_a": {
+          "name": "Device A",
+          "description": "First device."
+        },
+        "device_b": {
+          "name": "Device B",
+          "description": "Second device."
+        },
+        "update_automations": {
+          "name": "Update automations",
+          "description": "Swap device IDs in automations.yaml and scripts.yaml (a backup is created)."
+        },
+        "mapping": {
+          "name": "Mapping",
+          "description": "Optional: entity_id of A → entity_id of B. Mapped automatically if omitted."
+        }
+      }
     }
   }
 }

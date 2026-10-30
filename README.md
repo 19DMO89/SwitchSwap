@@ -44,6 +44,7 @@ Nach der Einrichtung erscheint links in der Seitenleiste **SwitchSwap** (nur fü
 - **Gerät tauschen**: Gerät suchen (Name, Hersteller, Modell, Bereich, Integration), auswählen, vormerken
 - **Ersatzgerät wählen**: neueste Geräte zuerst, nach dem Vormerken angelernte Geräte sind mit **neu** markiert
 - **Entitäten zuordnen**: Tabelle alt → neu mit automatischem Vorschlag, doppelte Zuordnungen werden markiert
+- **Zwei Geräte tauschen**: zwei aktive Geräte wählen, Entitäten-Paare prüfen, tauschen (siehe unten)
 
 Die Geräteliste aktualisiert sich automatisch, sobald ein neues Gerät angelernt wird.
 
@@ -71,6 +72,17 @@ Bei der **Zuordnung** schlägt SwitchSwap automatisch passende Entitäten vor (g
 
 Nach dem Abschluss erscheint eine Benachrichtigung mit allen Details.
 
+### Zwei aktive Geräte tauschen
+Für den Fall, dass zwei funktionierende Geräte die Plätze tauschen – z. B. die Steckdose aus der Küche kommt ins Wohnzimmer und umgekehrt:
+
+*SwitchSwap-Panel → **Zwei Geräte tauschen** → Gerät A wählen → Gerät B wählen → Paare prüfen → Geräte tauschen*
+
+- Entitäts-IDs, Namen, Symbole, Bereiche, Labels, Aliase, Geräteklasse, Ausblenden/Deaktivieren und Entitätsoptionen werden **über Kreuz** getauscht – danach ist `switch.kueche_steckdose` das Gerät, das jetzt in der Küche steckt.
+- Gerätename, Bereich und Labels der Geräte werden ebenfalls getauscht.
+- Geräte-IDs in `automations.yaml` / `scripts.yaml` werden getauscht (abschaltbar, mit Backup).
+- Es wird **nichts gelöscht**; Entitäten ohne Partner bleiben unverändert.
+- Verlauf hängt an der Entitäts-ID – die Historie von `switch.kueche_steckdose` läuft also mit dem neuen Gerät in der Küche weiter.
+
 ## Dienste (Aktionen)
 
 | Dienst | Beschreibung |
@@ -79,6 +91,7 @@ Nach dem Abschluss erscheint eine Benachrichtigung mit allen Details.
 | `switchswap.complete_swap` | Tausch abschließen (`old_device_id`, `new_device_id`, optional `mapping`, `update_automations`) |
 | `switchswap.cancel_swap` | Vorgemerkten Tausch verwerfen |
 | `switchswap.list_pending` | Vorgemerkte Tausche als Antwort zurückgeben |
+| `switchswap.exchange_devices` | Zwei aktive Geräte tauschen (`device_a`, `device_b`, optional `mapping`, `update_automations`) |
 
 Beispiel:
 
@@ -111,6 +124,8 @@ A **SwitchSwap sidebar panel** provides a full GUI for all steps. Alternatively:
 1. *SwitchSwap → Configure → Mark a device for replacement* (optionally deletes it)
 2. Pair the new device
 3. Accept the **Repairs** notification "New device detected" (or *Configure → Complete a swap*), review the suggested entity mapping, done.
+
+**Exchange two active devices** (panel or `switchswap.exchange_devices`): swaps entity IDs, names, areas, labels and settings crosswise between two working devices, e.g. after swapping two smart plugs. Nothing is deleted.
 
 ## Lizenz
 

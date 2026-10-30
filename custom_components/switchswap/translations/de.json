@@ -154,6 +154,28 @@
     "list_pending": {
       "name": "Vorgemerkte Tausche anzeigen",
       "description": "Gibt alle vorgemerkten Tausche als Antwort zurück."
+    },
+    "exchange_devices": {
+      "name": "Zwei Geräte tauschen",
+      "description": "Tauscht Entitäts-IDs, Namen, Bereiche und Einstellungen zweier aktiver Geräte über Kreuz (z. B. nach dem Umstecken zweier Steckdosen).",
+      "fields": {
+        "device_a": {
+          "name": "Gerät A",
+          "description": "Erstes Gerät."
+        },
+        "device_b": {
+          "name": "Gerät B",
+          "description": "Zweites Gerät."
+        },
+        "update_automations": {
+          "name": "Automationen anpassen",
+          "description": "Geräte-IDs in automations.yaml und scripts.yaml tauschen (Backup wird angelegt)."
+        },
+        "mapping": {
+          "name": "Zuordnung",
+          "description": "Optional: entity_id von A → entity_id von B. Ohne Angabe wird automatisch zugeordnet."
+        }
+      }
     }
   }
 }

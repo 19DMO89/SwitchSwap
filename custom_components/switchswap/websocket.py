@@ -22,6 +22,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_suggest,
         ws_complete,
         ws_cancel,
+        ws_exchange_suggest,
+        ws_exchange,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -151,3 +153,54 @@ async def ws_cancel(
         connection.send_error(msg["id"], err.key, str(err))
         return
     connection.send_result(msg["id"], {})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "switchswap/exchange_suggest",
+        vol.Required("device_a"): str,
+        vol.Required("device_b"): str,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_exchange_suggest(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if not (manager := _manager(hass, connection, msg)):
+        return
+    try:
+        result = manager.exchange_context(msg["device_a"], msg["device_b"])
+    except SwapError as err:
+        connection.send_error(msg["id"], err.key, str(err))
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "switchswap/exchange",
+        vol.Required("device_a"): str,
+        vol.Required("device_b"): str,
+        vol.Required("mapping"): {str: vol.Any(None, str)},
+        vol.Optional("update_automations", default=True): bool,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_exchange(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if not (manager := _manager(hass, connection, msg)):
+        return
+    try:
+        result = await manager.async_exchange(
+            msg["device_a"],
+            msg["device_b"],
+            msg["mapping"],
+            msg["update_automations"],
+        )
+    except SwapError as err:
+        connection.send_error(msg["id"], err.key, str(err))
+        return
+    connection.send_result(msg["id"], result)
